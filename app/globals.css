@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #FAF7F2;
+  --text: #1A1614;
+  --accent: #FF5C00;
+  --accent-light: #FFF0E8;
+  --border: #E8E2D9;
+  --card: #FFFFFF;
+  --muted: #6B5F54;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, .display {
+  font-family: 'Playfair Display', Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.hairline {
+  border-color: var(--border);
+}
+
+.hook-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.ticker {
+  font-variant-numeric: tabular-nums;
+}
+
+/* subtle paper texture for the bg */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(26,22,20,0.035) 1px, transparent 1px);
+  background-size: 3px 3px;
+  z-index: 0;
+}
+
+main, nav, header, footer { position: relative; z-index: 1; }
+
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #E8E2D9; border-radius: 3px;
+}

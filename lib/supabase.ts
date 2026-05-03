@@ -1,0 +1,34 @@
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+let _admin: SupabaseClient | null = null;
+let _anon: SupabaseClient | null = null;
+
+export function supabaseAdmin(): SupabaseClient {
+  if (_admin) return _admin;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+  _admin = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return _admin;
+}
+
+export function supabaseAnon(): SupabaseClient {
+  if (_anon) return _anon;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+  }
+  _anon = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return _anon;
+}
+
+export function hasSupabaseConfig(): boolean {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
+}
