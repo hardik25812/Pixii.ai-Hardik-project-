@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { DM_Sans, JetBrains_Mono, Playfair_Display } from 'next/font/google';
 import Link from 'next/link';
 import './globals.css';
+import PixiiChatPanel from './pixii-chat-panel';
 
 const display = Playfair_Display({
   subsets: ['latin'],
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </nav>
         {children}
+        <PixiiChatPanel />
       </body>
     </html>
   );

@@ -42,6 +42,83 @@ h1, h2, h3, .display {
   font-variant-numeric: tabular-nums;
 }
 
+.hero-stage {
+  position: relative;
+  isolation: isolate;
+}
+
+.hero-stage::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 92, 0, 0.24), transparent 28%),
+    radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.22), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 240, 232, 0.68));
+  animation: heroGlow 8s ease-in-out infinite alternate;
+}
+
+.hero-door {
+  position: absolute;
+  inset-block: 0;
+  z-index: 5;
+  width: 50%;
+  background:
+    linear-gradient(135deg, rgba(26, 22, 20, 0.96), rgba(26, 22, 20, 0.84)),
+    radial-gradient(circle, rgba(255, 92, 0, 0.34), transparent 45%);
+  pointer-events: none;
+  animation-duration: 1.35s;
+  animation-delay: 0.18s;
+  animation-fill-mode: forwards;
+  animation-timing-function: cubic-bezier(0.78, 0, 0.16, 1);
+}
+
+.hero-door-left {
+  left: 0;
+  transform-origin: left center;
+  animation-name: openLeftDoor;
+}
+
+.hero-door-right {
+  right: 0;
+  transform-origin: right center;
+  animation-name: openRightDoor;
+}
+
+.hero-panel-left {
+  animation: panelFromLeft 1s cubic-bezier(0.22, 1, 0.36, 1) 0.62s both;
+}
+
+.hero-panel-right {
+  animation: panelFromRight 1s cubic-bezier(0.22, 1, 0.36, 1) 0.72s both;
+}
+
+@keyframes openLeftDoor {
+  from { transform: translateX(0) scaleX(1); opacity: 1; }
+  to { transform: translateX(-104%) scaleX(0.92); opacity: 0.18; }
+}
+
+@keyframes openRightDoor {
+  from { transform: translateX(0) scaleX(1); opacity: 1; }
+  to { transform: translateX(104%) scaleX(0.92); opacity: 0.18; }
+}
+
+@keyframes panelFromLeft {
+  from { opacity: 0; transform: translateX(-42px) scale(0.98); filter: blur(12px); }
+  to { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+}
+
+@keyframes panelFromRight {
+  from { opacity: 0; transform: translateX(42px) scale(0.98); filter: blur(12px); }
+  to { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); }
+}
+
+@keyframes heroGlow {
+  from { transform: rotate(0deg) scale(1); }
+  to { transform: rotate(8deg) scale(1.08); }
+}
+
 /* subtle paper texture for the bg */
 body::before {
   content: '';
@@ -58,4 +135,127 @@ main, nav, header, footer { position: relative; z-index: 1; }
 .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-thin::-webkit-scrollbar-thumb {
   background: #E8E2D9; border-radius: 3px;
+}
+
+/* ── Handwriting / typewriter animation ── */
+@keyframes inkReveal {
+  from { max-width: 0; }
+  to { max-width: 100%; }
+}
+
+@keyframes inkCursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes penStroke {
+  0% { transform: scaleX(0); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+
+.ink-line {
+  display: inline-block;
+  overflow: hidden;
+  white-space: pre-wrap;
+  animation: inkReveal 0.8s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+  max-width: 0;
+}
+
+.ink-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: inkCursorBlink 0.6s ease-in-out infinite;
+}
+
+.ink-char {
+  display: inline-block;
+  opacity: 0;
+  animation: charFadeIn 0.06s ease forwards;
+}
+
+@keyframes charFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Pixii Chat streaming word animation ── */
+@keyframes wordIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chat-word {
+  display: inline;
+  animation: wordIn 0.18s ease forwards;
+  opacity: 0;
+}
+
+/* ── Chat orb / 3-D pulse ── */
+@keyframes orbFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%       { transform: translateY(-6px) scale(1.04); }
+}
+@keyframes orbRing1 {
+  0%   { transform: scale(1);    opacity: 0.55; }
+  100% { transform: scale(1.9);  opacity: 0; }
+}
+@keyframes orbRing2 {
+  0%   { transform: scale(1);    opacity: 0.38; }
+  100% { transform: scale(2.4);  opacity: 0; }
+}
+@keyframes orbRing3 {
+  0%   { transform: scale(1);    opacity: 0.22; }
+  100% { transform: scale(3.0);  opacity: 0; }
+}
+.chat-orb {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 38%, #ff8a4c, #FF5C00 60%, #c93b00);
+  box-shadow: 0 4px 24px rgba(255,92,0,0.45), 0 1px 4px rgba(0,0,0,0.18);
+  animation: orbFloat 3s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.chat-orb::before,
+.chat-orb::after,
+.chat-orb span {
+  content: '';
+  display: block;
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(255,92,0,0.28);
+}
+.chat-orb::before { animation: orbRing1 2.2s ease-out infinite; }
+.chat-orb::after  { animation: orbRing2 2.2s ease-out 0.4s infinite; }
+.chat-orb span    { animation: orbRing3 2.2s ease-out 0.8s infinite; }
+.chat-orb-inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.01em;
+  z-index: 1;
+}
+
+/* ── Voice score card ── */
+.voice-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #E8E2D9;
+  overflow: hidden;
+}
+.voice-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #FF5C00, #ffaa66);
+  transition: width 0.9s cubic-bezier(0.22,1,0.36,1);
 }

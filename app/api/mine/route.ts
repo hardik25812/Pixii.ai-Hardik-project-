@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { scrapeAll } from '@/lib/scraper';
 import { extractHooks } from '@/lib/extractor';
-import { supabaseAdmin } from '@/lib/supabase';
+import { ensurePatterns, insertHooks, recordMiningRun, refreshPatternStats } from '@/lib/ingest';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -10,41 +10,35 @@ export const dynamic = 'force-dynamic';
 async function run() {
   const posts = await scrapeAll();
   if (posts.length === 0) {
+    await recordMiningRun({
+      source: 'all',
+      status: 'empty',
+      message: 'No posts scraped',
+    });
     return { success: false, error: 'No posts scraped' };
   }
 
   const hooks = await extractHooks(posts);
 
-  const db = supabaseAdmin();
-  const { data: patterns } = await db.from('patterns').select('id, name');
-  const patternMap = Object.fromEntries(
-    (patterns ?? []).map((p) => [p.name, p.id])
-  );
+  const patternNames = hooks.map((h) => h.pattern_name);
+  const patternMap = await ensurePatterns(patternNames);
+  const result = await insertHooks(hooks, posts, patternMap);
+  if (result.error) throw new Error(result.error);
 
-  const toInsert = hooks
-    .map((h, i) => {
-      const post = posts[i];
-      if (!post) return null;
-      return {
-        raw_text: post.text.slice(0, 2000),
-        hook_text: h.hook_text,
-        pattern_id: patternMap[h.pattern_name] ?? null,
-        source: post.source,
-        source_url: post.url,
-        engagement_score: (post.likes || 0) + (post.comments || 0),
-        author_followers: post.author_followers ?? 0,
-        reasoning: h.reasoning,
-      };
-    })
-    .filter(Boolean);
-
-  const { error } = await db.from('hooks').insert(toInsert as any);
-  if (error) throw error;
+  await refreshPatternStats();
+  await recordMiningRun({
+    source: 'all',
+    status: 'success',
+    postsScraped: posts.length,
+    hooksExtracted: hooks.length,
+    hooksStored: result.stored,
+    message: `Cron mining complete: ${hooks.length} hooks extracted, ${result.stored} stored.`,
+  });
 
   return {
     success: true,
     posts_scraped: posts.length,
-    hooks_added: toInsert.length,
+    hooks_added: result.stored,
   };
 }
 

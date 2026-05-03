@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { ApifyClient } from 'apify-client';
 import { extractHooks } from '@/lib/extractor';
-import { hasSupabaseConfig, supabaseAdmin } from '@/lib/supabase';
+import { hasSupabaseConfig } from '@/lib/supabase';
+import { ensurePatterns, insertHooks, recordMiningRun, refreshPatternStats } from '@/lib/ingest';
 import type { RawPost } from '@/lib/scraper';
 import type { ExtractedHook } from '@/lib/extractor';
 
@@ -88,6 +89,13 @@ export async function POST() {
         });
 
         if (tweets.length === 0) {
+          if (hasSupabaseConfig()) {
+            await recordMiningRun({
+              source: 'twitter',
+              status: 'empty',
+              message: 'No tweets found',
+            });
+          }
           send({ phase: 'done', message: 'No tweets found', hooks_extracted: 0, hooks_stored: 0 });
           controller.close();
           return;
@@ -160,38 +168,34 @@ export async function POST() {
         if (hasSupabaseConfig()) {
           send({ phase: 'storing', message: 'Saving X hooks to database…', progress: 87 });
           try {
-            const db = supabaseAdmin();
-            const { data: patterns } = await db.from('patterns').select('id, name');
-            const patternMap = Object.fromEntries(
-              (patterns ?? []).map((p: { name: string; id: string }) => [p.name, p.id])
-            );
+            const patternNames = hooks.map((h) => h.pattern_name);
+            const patternMap = await ensurePatterns(patternNames);
 
-            const toInsert = hooks
-              .map((h, i) => {
-                const post = posts[i];
-                if (!post) return null;
-                return {
-                  raw_text: post.text.slice(0, 2000),
-                  hook_text: h.hook_text,
-                  pattern_id: patternMap[h.pattern_name] ?? null,
-                  source: 'twitter',
-                  source_url: post.url,
-                  engagement_score: (post.likes || 0) + (post.comments || 0),
-                  author_followers: 0,
-                  reasoning: h.reasoning,
-                };
-              })
-              .filter(Boolean);
+            const result = await insertHooks(hooks, posts, patternMap);
+            if (result.error) {
+              send({ phase: 'storing', message: `Storage warning: ${result.error}`, progress: 92 });
+            }
+            storedCount = result.stored;
 
-            const { error } = await db.from('hooks').insert(toInsert as any);
-            if (error) throw error;
-            storedCount = toInsert.length;
+            send({ phase: 'storing', message: 'Updating pattern statistics...', progress: 95 });
+            await refreshPatternStats();
           } catch (e: any) {
             send({ phase: 'storing', message: `Storage warning: ${e?.message}`, progress: 92 });
           }
         }
 
         // ── Final ──
+        if (hasSupabaseConfig()) {
+          await recordMiningRun({
+            source: 'twitter',
+            status: 'success',
+            postsScraped: posts.length,
+            hooksExtracted: hooks.length,
+            hooksStored: storedCount,
+            message: `X mining complete! ${hooks.length} hooks extracted from ${posts.length} tweets, ${storedCount} stored.`,
+          });
+        }
+
         send({
           phase: 'done',
           message: `X mining complete! ${hooks.length} hooks extracted from ${posts.length} tweets, ${storedCount} stored.`,

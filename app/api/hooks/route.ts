@@ -34,7 +34,15 @@ export async function GET(req: Request) {
     const { data, error } = await query;
     if (error) throw error;
 
-    return NextResponse.json({ hooks: data ?? [] });
+    const seen = new Set<string>();
+    const hooks = (data ?? []).filter((hook) => {
+      const key = hook.source_url || hook.hook_text;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return NextResponse.json({ hooks });
   } catch (e: any) {
     return NextResponse.json(
       { error: String(e?.message ?? e) },

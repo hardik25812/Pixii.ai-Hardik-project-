@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Hook } from '@/lib/types';
 
 // ── Types ───────────────────────────────────────────────────────────
 interface MiningEvent {
@@ -33,6 +34,17 @@ interface MonteResult {
   actor_used?: string;
   error?: string;
   sample?: ScrapePost[];
+}
+
+interface MiningRun {
+  id: string;
+  source: string;
+  status: string;
+  posts_scraped: number;
+  hooks_extracted: number;
+  hooks_stored: number;
+  message: string | null;
+  created_at: string;
 }
 
 // ── LinkedIn-style Post Card ─────────────────────────────────────────
@@ -260,7 +272,7 @@ function MonteVoiceSync() {
 }
 
 // ── Live Reddit Mining ──────────────────────────────────────────────
-function RedditMiner() {
+function RedditMiner({ onMiningComplete }: { onMiningComplete?: () => void }) {
   const [mining, setMining] = useState(false);
   const [events, setEvents] = useState<MiningEvent[]>([]);
   const [finalResult, setFinalResult] = useState<MiningEvent | null>(null);
@@ -299,6 +311,7 @@ function RedditMiner() {
             setEvents((prev) => [...prev, event]);
             if (event.phase === 'done' || event.phase === 'error') {
               setFinalResult(event);
+              if (event.phase === 'done') onMiningComplete?.();
             }
             // Auto-scroll log
             setTimeout(() => {
@@ -417,7 +430,7 @@ function RedditMiner() {
 // XPostCard + XVoiceSync disabled — X profile scraping unreliable for small accounts
 
 // ── X Miner (watcher.data/search-x-by-keywords → Claude hooks) ──────
-function XMiner() {
+function XMiner({ onMiningComplete }: { onMiningComplete?: () => void }) {
   const [mining, setMining] = useState(false);
   const [events, setEvents] = useState<MiningEvent[]>([]);
   const [finalResult, setFinalResult] = useState<MiningEvent | null>(null);
@@ -452,7 +465,10 @@ function XMiner() {
           try {
             const event = JSON.parse(line) as MiningEvent;
             setEvents((prev) => [...prev, event]);
-            if (event.phase === 'done' || event.phase === 'error') setFinalResult(event);
+            if (event.phase === 'done' || event.phase === 'error') {
+              setFinalResult(event);
+              if (event.phase === 'done') onMiningComplete?.();
+            }
             setTimeout(() => {
               logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' });
             }, 50);
@@ -571,15 +587,313 @@ function XMiner() {
   );
 }
 
+// ── Expandable Hook Card ─────────────────────────────────────────────
+function sourceLabel(s: string): string {
+  if (s === 'reddit') return 'Reddit';
+  if (s === 'twitter') return 'X / Twitter';
+  if (s === 'linkedin') return 'LinkedIn';
+  return s;
+}
+
+function sourceColor(s: string): string {
+  if (s === 'reddit') return 'bg-orange-100 text-orange-700';
+  if (s === 'twitter') return 'bg-sky-100 text-sky-700';
+  if (s === 'linkedin') return 'bg-blue-100 text-blue-700';
+  return 'bg-gray-100 text-gray-600';
+}
+
+function fmt(n?: number | null): string {
+  if (!n) return '—';
+  return Intl.NumberFormat('en', { notation: 'compact' }).format(n);
+}
+
+function patternName(hook: Hook): string {
+  if (!hook.patterns) return 'Unclassified';
+  if (Array.isArray(hook.patterns)) return hook.patterns[0]?.name ?? 'Unclassified';
+  return hook.patterns.name ?? 'Unclassified';
+}
+
+function HookCard({ hook, isExpanded, onToggle }: { hook: Hook; isExpanded: boolean; onToggle: () => void }) {
+  return (
+    <article
+      onClick={onToggle}
+      className={`group cursor-pointer rounded-[1.75rem] border hairline bg-card shadow-sm transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        isExpanded
+          ? 'col-span-1 md:col-span-2 xl:col-span-3 p-8 shadow-xl scale-[1.01] z-10 ring-2 ring-accent/20'
+          : 'p-6 hover:-translate-y-1 hover:shadow-md'
+      }`}
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <span className="rounded-full bg-accent-light px-3 py-1 text-xs font-black uppercase tracking-wide text-accent">
+          {patternName(hook)}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${sourceColor(hook.source)}`}>
+            {sourceLabel(hook.source)}
+          </span>
+          {isExpanded && (
+            <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-[10px] font-black text-accent animate-in fade-in">
+              Click anywhere to close
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className={`hook-text font-black leading-7 text-ink transition-all duration-500 ${
+        isExpanded ? 'text-2xl min-h-16' : 'text-xl min-h-24'
+      }`}>
+        {hook.hook_text}
+      </p>
+
+      <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        isExpanded ? 'max-h-[600px] opacity-100 mt-5' : 'max-h-[4.5rem] opacity-70 mt-5'
+      }`}>
+        <p className={`text-sm leading-6 text-muted ${isExpanded ? '' : 'line-clamp-3'}`}>
+          {hook.raw_text}
+        </p>
+      </div>
+
+      {/* Expanded details */}
+      <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
+        isExpanded ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0'
+      }`}>
+        {hook.source_url && (
+          <a
+            href={hook.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-block rounded-full border hairline px-4 py-2 text-xs font-bold text-accent hover:bg-accent-light transition"
+          >
+            View original →
+          </a>
+        )}
+      </div>
+
+      <div className="mt-6 flex items-end justify-between border-t hairline pt-4">
+        {(hook.engagement_score || 0) > 0 ? (
+          <div>
+            <div className="ticker text-2xl font-black text-ink">{fmt(hook.engagement_score)}</div>
+            <div className="text-xs font-bold uppercase tracking-wider text-muted">engagement</div>
+          </div>
+        ) : (
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-muted">sourced via search</div>
+          </div>
+        )}
+        <div className="max-w-[52%] text-right text-xs font-semibold leading-5 text-muted">
+          {hook.reasoning}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ── Hook Cards Grid ──────────────────────────────────────────────────
+function HookCardsGrid({ hooks }: { hooks: Hook[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Close on Escape key
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setExpandedId(null);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Close on click outside (backdrop)
+  const handleBackdropClick = useCallback(() => {
+    setExpandedId(null);
+  }, []);
+
+  return (
+    <>
+      {/* Backdrop overlay when a card is expanded */}
+      {expandedId && (
+        <div
+          className="fixed inset-0 z-[5] bg-black/10 backdrop-blur-[2px] animate-in fade-in duration-300"
+          onClick={handleBackdropClick}
+        />
+      )}
+
+      <section className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="display text-3xl font-black">The Mine</h2>
+          <p className="mt-1 text-sm text-muted">
+            Sorted by engagement. {hooks.length} hooks mined. Click any card to expand.
+          </p>
+        </div>
+        <a href="/write" className="rounded-full bg-accent px-5 py-3 text-sm font-black text-white shadow-sm hover:opacity-90">
+          Write from these patterns
+        </a>
+      </section>
+
+      <section className="relative z-[6] grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {hooks.map((hook) => (
+          <HookCard
+            key={hook.id}
+            hook={hook}
+            isExpanded={expandedId === hook.id}
+            onToggle={() => setExpandedId(expandedId === hook.id ? null : hook.id)}
+          />
+        ))}
+      </section>
+    </>
+  );
+}
+
+function sourceIcon(source: string): string {
+  if (source === 'reddit') return 'r/';
+  if (source === 'twitter') return '𝕏';
+  if (source === 'all') return '✦';
+  return '•';
+}
+
+function MiningHistorySidebar({
+  runs,
+  open,
+  error,
+  onToggle,
+}: {
+  runs: MiningRun[];
+  open: boolean;
+  error: string;
+  onToggle: () => void;
+}) {
+  return (
+    <aside
+      className={`fixed right-4 top-24 z-30 rounded-[1.75rem] border hairline bg-card/95 shadow-2xl backdrop-blur-xl transition-all duration-500 ${
+        open ? 'w-[22rem] p-5' : 'w-14 p-3'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-2xl bg-accent-light px-3 py-2 text-left text-xs font-black uppercase tracking-[0.16em] text-accent"
+      >
+        <span>{open ? 'Mining history' : '⌁'}</span>
+        {open && <span>{runs.length}</span>}
+      </button>
+
+      {open && (
+        <div className="scroll-thin mt-4 max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+          {runs.length === 0 && (
+            <p className="rounded-2xl bg-bg p-4 text-sm font-bold text-muted">
+              No mining runs stored yet. Start Reddit or X mining to create history.
+            </p>
+          )}
+          {error && (
+            <p className="rounded-2xl bg-red-50 p-4 text-xs font-bold leading-5 text-red-700">
+              History error: {error}
+            </p>
+          )}
+          {runs.map((run) => (
+            <div key={run.id} className="rounded-2xl border hairline bg-bg/70 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="rounded-full bg-card px-3 py-1 text-xs font-black text-ink">
+                  {sourceIcon(run.source)} {run.source}
+                </span>
+                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                  run.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {run.status}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-card p-2">
+                  <div className="ticker text-lg font-black">{run.posts_scraped}</div>
+                  <div className="text-[9px] font-bold uppercase text-muted">posts</div>
+                </div>
+                <div className="rounded-xl bg-card p-2">
+                  <div className="ticker text-lg font-black">{run.hooks_extracted}</div>
+                  <div className="text-[9px] font-bold uppercase text-muted">hooks</div>
+                </div>
+                <div className="rounded-xl bg-card p-2">
+                  <div className="ticker text-lg font-black text-accent">{run.hooks_stored}</div>
+                  <div className="text-[9px] font-bold uppercase text-muted">saved</div>
+                </div>
+              </div>
+              {run.message && <p className="mt-3 text-xs font-semibold leading-5 text-muted">{run.message}</p>}
+              <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-muted">
+                {new Date(run.created_at).toLocaleString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
+  );
+}
+
 // ── Combined export ─────────────────────────────────────────────────
-export default function HomeClient() {
+interface HomeClientProps {
+  initialHooks?: Hook[];
+}
+
+export default function HomeClient({ initialHooks = [] }: HomeClientProps) {
+  const [hooks, setHooks] = useState<Hook[]>(initialHooks);
+  const [runs, setRuns] = useState<MiningRun[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshRuns = useCallback(async () => {
+    try {
+      const res = await fetch('/api/mining-runs');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.runs && Array.isArray(data.runs)) setRuns(data.runs);
+        setHistoryError('');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setHistoryError(data.error || 'Unable to load mining history');
+      }
+    } catch (e: any) {
+      setHistoryError(String(e?.message ?? e));
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshRuns();
+  }, [refreshRuns]);
+
+  // Auto-refresh hooks from API after mining completes
+  const refreshHooks = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch('/api/hooks');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.hooks && Array.isArray(data.hooks)) {
+          setHooks(data.hooks);
+        }
+      }
+    } catch {} finally {
+      await refreshRuns();
+      setRefreshing(false);
+    }
+  }, [refreshRuns]);
+
   return (
     <div className="space-y-4">
+      <MiningHistorySidebar runs={runs} open={historyOpen} error={historyError} onToggle={() => setHistoryOpen((v) => !v)} />
       <MonteVoiceSync />
       <div className="grid gap-4 lg:grid-cols-2">
-        <RedditMiner />
-        <XMiner />
+        <RedditMiner onMiningComplete={refreshHooks} />
+        <XMiner onMiningComplete={refreshHooks} />
       </div>
+      {hooks.length > 0 && (
+        <>
+          {refreshing && (
+            <div className="flex items-center gap-2 rounded-2xl bg-accent-light px-4 py-3">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              <span className="text-sm font-bold text-accent">Refreshing hook cards…</span>
+            </div>
+          )}
+          <HookCardsGrid hooks={hooks} />
+        </>
+      )}
     </div>
   );
 }

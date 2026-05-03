@@ -292,7 +292,7 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
   const [patternId, setPatternId] = useState(initialPatternId || patterns[0]?.id || '');
   const [drafts, setDrafts] = useState<Drafts | null>(null);
   const [visibleDrafts, setVisibleDrafts] = useState<string[]>([]);
-  const [visibleLines, setVisibleLines] = useState<Record<number, number>>({});
+  const [visibleChars, setVisibleChars] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [linkedinPerson, setLinkedinPerson] = useState('');
@@ -313,7 +313,7 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
     setError('');
     setDrafts(null);
     setVisibleDrafts([]);
-    setVisibleLines({});
+    setVisibleChars({});
     revealTimers.current.forEach(clearTimeout);
     revealTimers.current = [];
     try {
@@ -326,21 +326,24 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
       if (!res.ok) throw new Error('error' in json && json.error ? json.error : 'Generation failed');
       const generatedDrafts = json as Drafts;
       setDrafts(generatedDrafts);
+      let cumulativeDelay = 0;
       [generatedDrafts.draft_1, generatedDrafts.draft_2, generatedDrafts.draft_3].forEach((draft, idx) => {
-        const lines = draft.split('\n');
         const revealCardTimer = setTimeout(() => {
           setVisibleDrafts((current) => [...current, draft]);
-          lines.forEach((_line: string, lineIdx: number) => {
-            const revealLineTimer = setTimeout(() => {
-              setVisibleLines((current) => ({
-                ...current,
-                [idx]: lineIdx + 1,
-              }));
-            }, lineIdx * 120);
-            revealTimers.current.push(revealLineTimer);
-          });
-        }, idx * 650);
+          // Character-by-character typewriter reveal
+          const charCount = draft.length;
+          for (let c = 0; c <= charCount; c++) {
+            // Variable speed: faster for spaces/newlines, slower for letters
+            const ch = draft[c - 1] ?? '';
+            const charDelay = ch === ' ' || ch === '\n' ? 15 : 28;
+            const revealCharTimer = setTimeout(() => {
+              setVisibleChars((current) => ({ ...current, [idx]: c }));
+            }, c * charDelay);
+            revealTimers.current.push(revealCharTimer);
+          }
+        }, cumulativeDelay);
         revealTimers.current.push(revealCardTimer);
+        cumulativeDelay += 800;
       });
     } catch (e: any) {
       setError(String(e?.message ?? e));
@@ -468,9 +471,10 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
         ))}
 
         {drafts && visibleDrafts.map((draft, idx) => {
-          const lines = draft.split('\n');
-          const renderedLines = lines.slice(0, visibleLines[idx] ?? 0);
-          const complete = renderedLines.length === lines.length;
+          const chars = visibleChars[idx] ?? 0;
+          const complete = chars >= draft.length;
+          const revealedText = draft.slice(0, chars);
+          const lines = revealedText.split('\n');
           return (
             <TiltCard key={`${idx}-${draft}`} tiltLimit={5} className="rounded-[2rem] border hairline bg-card p-6 shadow-sm animate-in fade-in slide-in-from-bottom-4">
               <article>
@@ -480,14 +484,14 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
                     Copy
                   </button>
                 </div>
-                <div className="hook-text text-base font-semibold leading-7 text-ink">
-                  {renderedLines.map((line, lineIdx) => (
-                    <p key={`${lineIdx}-${line}`} className="min-h-7 animate-in fade-in slide-in-from-bottom-1">
+                <div className="hook-text text-base font-semibold leading-7 text-ink" style={{ fontFamily: "'Playfair Display', Georgia, serif" }}>
+                  {lines.map((line, lineIdx) => (
+                    <p key={`${lineIdx}`} className="min-h-7">
                       {line || '\u00a0'}
                     </p>
                   ))}
                   {!complete && (
-                    <span className="mt-1 inline-block h-5 w-2 animate-pulse rounded-sm bg-accent align-middle" />
+                    <span className="ink-cursor" />
                   )}
                 </div>
                 {complete && (

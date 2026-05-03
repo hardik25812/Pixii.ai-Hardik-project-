@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { scrapeReddit } from '@/lib/scraper';
 import { extractHooks } from '@/lib/extractor';
-import { hasSupabaseConfig, supabaseAdmin } from '@/lib/supabase';
+import { hasSupabaseConfig } from '@/lib/supabase';
+import { ensurePatterns, insertHooks, recordMiningRun, refreshPatternStats } from '@/lib/ingest';
 import type { RawPost } from '@/lib/scraper';
 import type { ExtractedHook } from '@/lib/extractor';
 
@@ -45,6 +46,13 @@ export async function POST() {
         });
 
         if (posts.length === 0) {
+          if (hasSupabaseConfig()) {
+            await recordMiningRun({
+              source: 'reddit',
+              status: 'empty',
+              message: 'No posts found on Reddit',
+            });
+          }
           send({ phase: 'done', message: 'No posts found on Reddit', hooks_added: 0 });
           controller.close();
           return;
@@ -109,38 +117,36 @@ export async function POST() {
           send({ phase: 'storing', message: 'Saving hooks to database...', progress: 85 });
 
           try {
-            const db = supabaseAdmin();
-            const { data: patterns } = await db.from('patterns').select('id, name');
-            const patternMap = Object.fromEntries(
-              (patterns ?? []).map((p) => [p.name, p.id])
-            );
+            // Auto-create any new patterns Claude discovered
+            const patternNames = hooks.map((h) => h.pattern_name);
+            const patternMap = await ensurePatterns(patternNames);
 
-            const toInsert = hooks
-              .map((h, i) => {
-                const post = posts[i];
-                if (!post) return null;
-                return {
-                  raw_text: post.text.slice(0, 2000),
-                  hook_text: h.hook_text,
-                  pattern_id: patternMap[h.pattern_name] ?? null,
-                  source: post.source,
-                  source_url: post.url,
-                  engagement_score: (post.likes || 0) + (post.comments || 0),
-                  author_followers: post.author_followers ?? 0,
-                  reasoning: h.reasoning,
-                };
-              })
-              .filter(Boolean);
+            const result = await insertHooks(hooks, posts, patternMap);
+            if (result.error) {
+              send({ phase: 'storing', message: `Storage warning: ${result.error}`, progress: 90 });
+            }
+            storedCount = result.stored;
 
-            const { error } = await db.from('hooks').insert(toInsert as any);
-            if (error) throw error;
-            storedCount = toInsert.length;
+            // Refresh pattern stats (example_count, avg_engagement)
+            send({ phase: 'storing', message: 'Updating pattern statistics...', progress: 95 });
+            await refreshPatternStats();
           } catch (e: any) {
             send({ phase: 'storing', message: `Storage warning: ${e?.message}`, progress: 90 });
           }
         }
 
         // Final result
+        if (hasSupabaseConfig()) {
+          await recordMiningRun({
+            source: 'reddit',
+            status: 'success',
+            postsScraped: posts.length,
+            hooksExtracted: hooks.length,
+            hooksStored: storedCount,
+            message: `Mining complete! ${hooks.length} hooks extracted, ${storedCount} stored.`,
+          });
+        }
+
         send({
           phase: 'done',
           message: `Mining complete! ${hooks.length} hooks extracted, ${storedCount} stored.`,
