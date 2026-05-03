@@ -185,13 +185,16 @@ main, nav, header, footer { position: relative; z-index: 1; }
 
 /* ── Pixii Chat streaming word animation ── */
 @keyframes wordIn {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .chat-word {
-  display: inline;
-  animation: wordIn 0.18s ease forwards;
+  display: inline-block;
+  min-width: 0.18em;
+  animation: wordIn 0.12s ease forwards;
   opacity: 0;
+  transform: translateZ(0);
+  will-change: opacity;
 }
 
 /* ── Chat orb / 3-D pulse ── */

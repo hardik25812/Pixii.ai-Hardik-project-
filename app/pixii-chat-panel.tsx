@@ -156,7 +156,7 @@ function VoiceScoreCard({ output }: { output: any }) {
 }
 
 /* ─── Tool card ─────────────────────────────────────────────────── */
-function ToolCard({ block }: { block: Extract<Block, { kind: 'tool' }> }) {
+function ToolCard({ block, animateDrafts = false }: { block: Extract<Block, { kind: 'tool' }>; animateDrafts?: boolean }) {
   const [open, setOpen] = useState(true);
   const statusLabel =
     block.status === 'running' ? 'Running'
@@ -276,13 +276,13 @@ function ToolCard({ block }: { block: Extract<Block, { kind: 'tool' }> }) {
                 </ul>
               )}
               {isDrafts && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {[1,2,3].map((i) => {
                     const txt = block.output[`draft_${i}`];
                     const score = block.output.voice_scores?.[i - 1];
                     if (!txt) return null;
                     return (
-                      <div key={i} className="rounded-2xl border hairline bg-white p-4 shadow-sm">
+                      <div key={i} className="w-full rounded-2xl border hairline bg-white p-4 shadow-sm">
                         <div className="mb-2 flex items-center justify-between">
                           <span className="text-[11px] font-bold uppercase tracking-wider text-ink">
                             Draft {i}{block.output.pattern_name ? ` · ${block.output.pattern_name}` : ''}
@@ -294,8 +294,8 @@ function ToolCard({ block }: { block: Extract<Block, { kind: 'tool' }> }) {
                             Copy
                           </button>
                         </div>
-                        <p className="hook-text whitespace-pre-wrap text-[13px] leading-6 text-ink">
-                          <StreamingText text={txt} animate />
+                        <p className="hook-text min-h-[7rem] whitespace-pre-wrap text-[13px] leading-6 text-ink">
+                          <StreamingText text={txt} animate={animateDrafts} />
                         </p>
                         {score && <VoiceScoreCard output={score} />}
                       </div>
@@ -367,21 +367,21 @@ function MessageBubble({ message, isLatestAssistant }: { message: Message; isLat
     );
   }
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       {message.blocks.map((b, i) => {
         if (b.kind === 'text') {
           const isLastBlock = i === message.blocks.length - 1;
           return (
             <p
               key={i}
-              className="text-[15px] leading-7 text-ink"
+              className="whitespace-pre-wrap text-[15px] leading-7 text-ink"
               style={{ fontFamily: '"Charter","Iowan Old Style","Source Serif Pro",Georgia,serif' }}
             >
               <StreamingText text={b.text} animate={isLatestAssistant && isLastBlock} />
             </p>
           );
         }
-        return <ToolCard key={i} block={b} />;
+        return <ToolCard key={i} block={b} animateDrafts={isLatestAssistant} />;
       })}
     </div>
   );
@@ -717,8 +717,8 @@ export default function PixiiChatPanel() {
             </div>
 
             {/* Messages */}
-            <div ref={scrollRef} className="scroll-thin flex-1 overflow-y-auto px-5 py-5">
-              <div className="mx-auto w-full max-w-3xl space-y-5">
+            <div ref={scrollRef} className="scroll-thin flex-1 overflow-y-auto overflow-x-hidden px-5 py-5">
+              <div className="mx-auto w-full max-w-3xl space-y-5 [overflow-anchor:none]">
                 {/* Empty state */}
                 {messages.length === 0 && (
                   <div className="space-y-5">
