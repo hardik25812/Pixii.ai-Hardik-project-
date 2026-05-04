@@ -61,7 +61,7 @@ export default async function PatternsPage() {
     <main className="mx-auto max-w-7xl px-6 pb-16 pt-8">
       <header className="mb-10 max-w-4xl">
         <p className="mono mb-3 text-xs font-bold uppercase tracking-[0.24em] text-accent">Pattern library</p>
-        <h1 className="display text-5xl font-black leading-none md:text-7xl">Six hook structures Monte already uses.</h1>
+        <h1 className="display text-5xl font-black leading-none md:text-7xl">Seven hook structures Monte already uses.</h1>
         <p className="mt-5 text-lg leading-8 text-muted">
           Each cluster turns viral raw material into repeatable post templates. Pick one, then generate Pixii drafts from the Writer.
         </p>

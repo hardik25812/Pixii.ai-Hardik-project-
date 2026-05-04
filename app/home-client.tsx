@@ -336,7 +336,7 @@ function RedditMiner({ onMiningComplete }: { onMiningComplete?: () => void }) {
           <p className="mono text-xs font-black uppercase tracking-[0.2em] text-accent">Live Mining</p>
           <h3 className="display mt-1 text-xl font-black">Mine Reddit Now</h3>
           <p className="mt-2 text-sm text-muted">
-            Scrape top Reddit posts live, then watch Claude extract hooks and patterns in real-time.
+            Scrape top Reddit posts live, then watch hooks and patterns get extracted in real-time.
           </p>
         </div>
         <button
@@ -496,7 +496,7 @@ function XMiner({ onMiningComplete }: { onMiningComplete?: () => void }) {
           </div>
           <h3 className="display mt-2 text-xl font-black">Mine X Now</h3>
           <p className="mt-1 text-sm text-muted">
-            Search X for top ecommerce tweets, then watch Claude extract hooks in real-time.
+            Search X for top ecommerce tweets, then watch hooks get extracted in real-time.
           </p>
         </div>
         <button
@@ -653,22 +653,6 @@ function HookCard({ hook, isExpanded, onToggle }: { hook: Hook; isExpanded: bool
         </p>
       </div>
 
-      {/* Expanded details */}
-      <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${
-        isExpanded ? 'max-h-40 opacity-100 mt-4' : 'max-h-0 opacity-0'
-      }`}>
-        {hook.source_url && (
-          <a
-            href={hook.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-block rounded-full border hairline px-4 py-2 text-xs font-bold text-accent hover:bg-accent-light transition"
-          >
-            View original →
-          </a>
-        )}
-      </div>
 
       <div className="mt-6 flex items-end justify-between border-t hairline pt-4">
         {(hook.engagement_score || 0) > 0 ? (

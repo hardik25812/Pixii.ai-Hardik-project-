@@ -1,6 +1,11 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+declare global {
+  interface Window { __pixiiOpenChat?: () => void; }
+}
 
 /* ─── Types ────────────────────────────────────────────────────── */
 type Block =
@@ -484,6 +489,12 @@ export default function PixiiChatPanel() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [threads, busy, activeId]);
 
+  /* ── Expose open handler to navbar button ── */
+  useEffect(() => {
+    window.__pixiiOpenChat = () => { setOpen(true); setExpanded(true); };
+    return () => { delete window.__pixiiOpenChat; };
+  }, []);
+
   const activeThread = useMemo(() => threads.find((t) => t.id === activeId) ?? null, [threads, activeId]);
   const messages     = activeThread?.messages ?? [];
 
@@ -629,21 +640,6 @@ export default function PixiiChatPanel() {
   /* ─── Render ─────────────────────────────────────────────────── */
   return (
     <>
-      {/* Launcher button */}
-      {!open && (
-        <button
-          type="button"
-          onClick={() => { setOpen(true); setExpanded(true); }}
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full bg-ink py-3 pl-4 pr-5 text-sm font-bold text-white shadow-2xl transition hover:scale-[1.03]"
-        >
-          <div className="chat-orb" style={{ width: 28, height: 28 }}>
-            <span />
-            <div className="chat-orb-inner" style={{ fontSize: 9 }}>Px</div>
-          </div>
-          Pixii Chat
-        </button>
-      )}
-
       {/* Panel */}
       <div
         className={`fixed z-50 flex bg-[#FAF7F2] transition-all duration-300 ${
@@ -694,14 +690,13 @@ export default function PixiiChatPanel() {
                   </button>
                 )}
                 <div className="flex items-center gap-2.5">
-                  <div className="chat-orb" style={{ width: 32, height: 32 }}>
-                    <span />
-                    <div className="chat-orb-inner" style={{ fontSize: 10 }}>Px</div>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-light">
+                    <Image src="/pixii-logo.svg" alt="Pixii" width={56} height={16} className="h-4 w-auto" />
                   </div>
                   <div>
                     <div className="text-sm font-black uppercase tracking-[0.18em]">Pixii Chat</div>
                     <div className="truncate max-w-[240px] text-[11px] text-muted">
-                      {activeThread?.title || 'New chat'} · Claude 4.5
+                      {activeThread?.title || 'New chat'}
                     </div>
                   </div>
                 </div>
@@ -723,9 +718,8 @@ export default function PixiiChatPanel() {
                 {messages.length === 0 && (
                   <div className="space-y-5">
                     <div className="flex justify-center pt-6">
-                      <div className="chat-orb" style={{ width: 64, height: 64 }}>
-                        <span />
-                        <div className="chat-orb-inner" style={{ fontSize: 18 }}>Px</div>
+                      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-light">
+                        <Image src="/pixii-logo.svg" alt="Pixii" width={80} height={22} className="h-5 w-auto" />
                       </div>
                     </div>
                     <h3 className="text-center text-2xl leading-snug text-ink" style={{ fontFamily: '"Charter","Iowan Old Style",Georgia,serif' }}>
@@ -754,9 +748,8 @@ export default function PixiiChatPanel() {
 
                 {busy && (
                   <div className="flex items-center gap-3 py-1">
-                    <div className="chat-orb" style={{ width: 28, height: 28 }}>
-                      <span />
-                      <div className="chat-orb-inner" style={{ fontSize: 9 }}>Px</div>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-light">
+                      <Image src="/pixii-logo.svg" alt="Pixii" width={44} height={12} className="h-3 w-auto" />
                     </div>
                     <span className="text-xs font-semibold text-muted">Pixii is working…</span>
                   </div>
