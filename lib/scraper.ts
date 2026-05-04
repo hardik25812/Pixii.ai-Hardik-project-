@@ -368,6 +368,97 @@ export async function scrapeLinkedIn(): Promise<RawPost[]> {
     .slice(0, 60);
 }
 
+/* ─── Dynamic keyword scraping (for chat tool) ─── */
+
+export async function scrapeRedditByKeywords(
+  keywords: string[],
+  maxItems = 40
+): Promise<RawPost[]> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) {
+    // Fallback: DuckDuckGo search-based
+    const posts: RawPost[] = [];
+    for (const kw of keywords.slice(0, 5)) {
+      try {
+        const md = await duckDuckSearch(`site:reddit.com ${kw}`);
+        const blocks = md.split(/\n## \[/g).slice(1);
+        for (const raw of blocks) {
+          const block = '## [' + raw;
+          const titleMatch = block.match(/## \[([^\]]+)\]\(([^)]+)\)/);
+          if (!titleMatch) continue;
+          const title = titleMatch[1].trim();
+          const ddgUrl = titleMatch[2];
+          const uddgMatch = ddgUrl.match(/uddg=([^&]+)/);
+          const realUrl = uddgMatch ? decodeURIComponent(uddgMatch[1]) : ddgUrl;
+          if (!/reddit\.com/i.test(realUrl)) continue;
+          if (title.length < 25) continue;
+          posts.push({ text: title.slice(0, 1200), url: realUrl, source: 'reddit', likes: 0, comments: 0 });
+        }
+      } catch { /* skip */ }
+    }
+    const seen = new Set<string>();
+    return posts.filter((p) => (seen.has(p.url) ? false : (seen.add(p.url), true))).slice(0, maxItems);
+  }
+
+  const client = new ApifyClient({ token });
+  const cap = Math.min(maxItems, 80);
+
+  const input: Record<string, unknown> = {
+    searches: keywords.map((kw) => kw),
+    maxItems: cap,
+    type: 'posts',
+    sort: 'top',
+    time: 'month',
+    proxy: { useApifyProxy: true },
+  };
+
+  const run = await client.actor('datara/reddit-search-scraper').call(input, {
+    timeout: 180,
+    memory: 512,
+  });
+
+  const { items } = await client
+    .dataset(run.defaultDatasetId)
+    .listItems({ limit: cap });
+
+  const posts: RawPost[] = [];
+  for (const raw of items as Array<Record<string, unknown>>) {
+    const title = String(raw.title ?? raw.postTitle ?? '');
+    const body = String(raw.text ?? raw.selftext ?? raw.body ?? raw.content ?? '');
+    const text = `${title}\n${body}`.trim();
+    if (text.length < 40) continue;
+    const url = String(raw.url ?? raw.postUrl ?? raw.permalink ?? raw.link ?? '');
+    posts.push({
+      text: text.slice(0, 4000),
+      url: url.startsWith('/r/') ? `https://www.reddit.com${url}` : url,
+      source: 'reddit',
+      likes: Number(raw.score ?? raw.ups ?? raw.upVotes ?? 0),
+      comments: Number(raw.numComments ?? raw.commentsCount ?? raw.num_comments ?? 0),
+    });
+  }
+
+  return posts
+    .sort((a, b) => (b.likes + b.comments) - (a.likes + a.comments))
+    .slice(0, cap);
+}
+
+export async function scrapeTwitterByKeywords(
+  keywords: string[],
+  maxItems = 40
+): Promise<RawPost[]> {
+  const posts: RawPost[] = [];
+  for (const kw of keywords.slice(0, 6)) {
+    try {
+      const md = await duckDuckSearch(`site:x.com ${kw}`);
+      posts.push(...parseDdg(md, 'twitter'));
+    } catch { /* skip */ }
+  }
+  const seen = new Set<string>();
+  return posts
+    .filter((p) => (seen.has(p.url) ? false : (seen.add(p.url), true)))
+    .slice(0, maxItems);
+}
+
 /* ─── Combined ─── */
 
 export async function scrapeAll(): Promise<RawPost[]> {

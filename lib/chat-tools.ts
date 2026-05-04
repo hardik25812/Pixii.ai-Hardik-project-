@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { supabaseAdmin, hasSupabaseConfig } from './supabase';
-import { scrapeReddit, scrapeTwitter, type RawPost } from './scraper';
+import { scrapeReddit, scrapeTwitter, scrapeRedditByKeywords, scrapeTwitterByKeywords, type RawPost } from './scraper';
 import { extractHooks, MODEL } from './extractor';
 import { ensurePatterns, insertHooks, recordMiningRun, refreshPatternStats } from './ingest';
 import { MONTE_VOICE_EXAMPLES, MONTE_VOICE_RULES } from './monte-voice';
@@ -107,6 +107,32 @@ export const PIXII_TOOLS: ToolDef[] = [
       type: 'object',
       properties: { draft: { type: 'string' } },
       required: ['draft'],
+    },
+  },
+  {
+    name: 'fetch_viral_hooks',
+    description:
+      'Scrape Reddit and/or X RIGHT NOW with dynamic keywords the user provides, extract viral hooks with Claude, and return them. Use when the user says things like "find me viral hooks about AI agents" or "what\'s trending on Reddit about ecommerce". The keywords are fully dynamic — whatever the user asks for. After returning hooks, you can draft posts using them.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Dynamic search keywords/topics to scrape. E.g. ["AI agents", "ecommerce growth", "Amazon FBA tips"]. Pick 2-5 keywords based on what the user asked for.',
+        },
+        sources: {
+          type: 'string',
+          enum: ['reddit', 'x', 'both'],
+          description: "Which platforms to scrape. Default 'both'.",
+        },
+        limit: {
+          type: 'number',
+          description: 'Max posts to scrape per source. Default 40, max 80.',
+        },
+      },
+      required: ['keywords'],
     },
   },
   {
@@ -444,6 +470,93 @@ async function postToPlatform(input: any) {
   };
 }
 
+async function fetchViralHooks(input: any, emit: EmitFn) {
+  const keywords: string[] = input?.keywords ?? [];
+  if (keywords.length === 0) return { error: 'At least one keyword is required.' };
+
+  const sources = String(input?.sources ?? 'both').toLowerCase();
+  const limit = Math.min(Math.max(Number(input?.limit ?? 40), 5), 80);
+  const allPosts: RawPost[] = [];
+  const sourceResults: Record<string, number> = {};
+
+  // Scrape Reddit
+  if (sources === 'reddit' || sources === 'both') {
+    emit({ type: 'tool_progress', message: `Searching Reddit for: ${keywords.join(', ')}…` });
+    try {
+      const rPosts = await scrapeRedditByKeywords(keywords, limit);
+      allPosts.push(...rPosts);
+      sourceResults.reddit = rPosts.length;
+    } catch (e: any) {
+      sourceResults.reddit_error = e?.message ?? String(e);
+    }
+  }
+
+  // Scrape X
+  if (sources === 'x' || sources === 'both') {
+    emit({ type: 'tool_progress', message: `Searching X for: ${keywords.join(', ')}…` });
+    try {
+      const xPosts = await scrapeTwitterByKeywords(keywords, limit);
+      allPosts.push(...xPosts);
+      sourceResults.x = xPosts.length;
+    } catch (e: any) {
+      sourceResults.x_error = e?.message ?? String(e);
+    }
+  }
+
+  if (allPosts.length === 0) {
+    return { error: 'No posts found for those keywords.', source_results: sourceResults };
+  }
+
+  // Sort by engagement and take top posts
+  const top = allPosts
+    .sort((a, b) => (b.likes + b.comments) - (a.likes + a.comments))
+    .slice(0, limit);
+
+  emit({
+    type: 'tool_progress',
+    message: `Found ${top.length} posts. Extracting viral hooks with Claude…`,
+  });
+
+  // Extract hooks
+  const hooks = await extractHooks(top);
+
+  emit({
+    type: 'tool_progress',
+    message: `Extracted ${hooks.length} viral hooks from ${top.length} posts.`,
+  });
+
+  // Optionally store in DB if Supabase is configured
+  let stored = 0;
+  if (hasSupabaseConfig() && hooks.length > 0) {
+    try {
+      const patternMap = await ensurePatterns(hooks.map((h) => h.pattern_name));
+      const result = await insertHooks(hooks, top, patternMap);
+      stored = result.stored;
+      await refreshPatternStats();
+    } catch { /* non-critical */ }
+  }
+
+  return {
+    keywords,
+    sources_scraped: sourceResults,
+    posts_found: top.length,
+    hooks_extracted: hooks.length,
+    hooks_stored: stored,
+    hooks: hooks.slice(0, 10).map((h) => ({
+      hook_text: h.hook_text,
+      pattern_name: h.pattern_name,
+      reasoning: h.reasoning,
+    })),
+    top_posts: top.slice(0, 5).map((p) => ({
+      text: p.text.slice(0, 200),
+      url: p.url,
+      source: p.source,
+      likes: p.likes,
+      comments: p.comments,
+    })),
+  };
+}
+
 async function syncMonteVoice(input: any, emit: EmitFn, origin: string) {
   const platform = String(input?.platform ?? 'both').toLowerCase();
   const targets: string[] = [];
@@ -491,6 +604,8 @@ export async function executeTool(
         return await generateLinkedinPost(input, emit);
       case 'score_voice':
         return await scoreVoice(input);
+      case 'fetch_viral_hooks':
+        return await fetchViralHooks(input, emit);
       case 'post_to_platform':
         return await postToPlatform(input);
       default:
