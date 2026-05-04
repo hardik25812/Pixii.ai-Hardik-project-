@@ -1,4 +1,5 @@
 import { duckDuckSearch } from './jina';
+import { ApifyClient } from 'apify-client';
 
 export interface RawPost {
   text: string;
@@ -21,6 +22,72 @@ const SUBREDDITS = [
   'artificial',
   'smallbusiness',
 ];
+
+/**
+ * Scrape Reddit via Apify actor `datara/reddit-search-scraper`.
+ * Pricing: $5 per 10,000 results -> 80 results ~= $0.04 per run.
+ * Vercel-safe (no 403, no Reddit OAuth needed).
+ */
+async function scrapeRedditViaApify(): Promise<RawPost[]> {
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) return [];
+
+  const client = new ApifyClient({ token });
+
+  // Hard cap to keep cost ~$0.04 per run (well under $0.40 budget)
+  const MAX_ITEMS = 80;
+
+  const startUrls = SUBREDDITS.map((s) => ({
+    url: `https://www.reddit.com/r/${s}/top/?t=month`,
+  }));
+
+  const input: Record<string, unknown> = {
+    startUrls,
+    searches: SUBREDDITS.map((s) => `subreddit:${s}`),
+    maxItems: MAX_ITEMS,
+    type: 'posts',
+    sort: 'top',
+    time: 'month',
+    proxy: { useApifyProxy: true },
+  };
+
+  const run = await client.actor('datara/reddit-search-scraper').call(input, {
+    timeout: 180,
+    memory: 512,
+  });
+
+  const { items } = await client
+    .dataset(run.defaultDatasetId)
+    .listItems({ limit: MAX_ITEMS });
+
+  const posts: RawPost[] = [];
+  for (const raw of items as Array<Record<string, unknown>>) {
+    const title = String(raw.title ?? raw.postTitle ?? '');
+    const body = String(raw.text ?? raw.selftext ?? raw.body ?? raw.content ?? '');
+    const text = `${title}\n${body}`.trim();
+    if (text.length < 40) continue;
+
+    const url = String(raw.url ?? raw.postUrl ?? raw.permalink ?? raw.link ?? '');
+    const likes = Number(
+      raw.score ?? raw.ups ?? raw.upVotes ?? raw.numUpvotes ?? raw.likes ?? 0
+    );
+    const comments = Number(
+      raw.numComments ?? raw.commentsCount ?? raw.num_comments ?? raw.comments ?? 0
+    );
+
+    posts.push({
+      text: text.slice(0, 4000),
+      url: url.startsWith('/r/') ? `https://www.reddit.com${url}` : url,
+      source: 'reddit',
+      likes,
+      comments,
+    });
+  }
+
+  return posts
+    .sort((a, b) => (b.likes + b.comments) - (a.likes + a.comments))
+    .slice(0, MAX_ITEMS);
+}
 
 async function getRedditAccessToken(): Promise<string | null> {
   const clientId = process.env.REDDIT_CLIENT_ID;
@@ -106,6 +173,17 @@ async function scrapeRedditViaSearch(): Promise<RawPost[]> {
 }
 
 export async function scrapeReddit(): Promise<RawPost[]> {
+  // Preferred path: Apify actor (Vercel-safe, ~$0.04/run, capped at 80 items)
+  if (process.env.APIFY_API_TOKEN) {
+    try {
+      const apifyPosts = await scrapeRedditViaApify();
+      if (apifyPosts.length > 0) return apifyPosts;
+    } catch (e) {
+      // fall through to OAuth / public path on Apify failure
+      console.error('Apify Reddit scrape failed, falling back:', e);
+    }
+  }
+
   const posts: RawPost[] = [];
   const errors: string[] = [];
   const token = await getRedditAccessToken();
