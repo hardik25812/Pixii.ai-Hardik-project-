@@ -22,19 +22,97 @@ const SUBREDDITS = [
   'smallbusiness',
 ];
 
+async function getRedditAccessToken(): Promise<string | null> {
+  const clientId = process.env.REDDIT_CLIENT_ID;
+  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${basic}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'PixiiHookMiningEngine/1.0 by hardik25812',
+    },
+    body: 'grant_type=client_credentials',
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!res.ok) return null;
+  const json = await res.json();
+  return typeof json?.access_token === 'string' ? json.access_token : null;
+}
+
+async function fetchRedditListing(sub: string, token: string | null) {
+  const url = token
+    ? `https://oauth.reddit.com/r/${sub}/top?t=month&limit=50`
+    : `https://www.reddit.com/r/${sub}/top.json?t=month&limit=50&raw_json=1`;
+
+  return fetch(url, {
+    headers: token
+      ? {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'PixiiHookMiningEngine/1.0 by hardik25812',
+        }
+      : {
+          Accept: 'application/json',
+          'User-Agent':
+            'Mozilla/5.0 (compatible; PixiiHookMiningEngine/1.0; +https://pixii.ai)',
+        },
+    signal: AbortSignal.timeout(15000),
+  });
+}
+
+async function scrapeRedditViaSearch(): Promise<RawPost[]> {
+  const posts: RawPost[] = [];
+  const queries = [
+    'site:reddit.com/r/FulfillmentByAmazon top amazon seller',
+    'site:reddit.com/r/ecommerce ecommerce founder',
+    'site:reddit.com/r/AmazonSeller amazon listing',
+    'site:reddit.com/r/Entrepreneur startup growth',
+    'site:reddit.com/r/SaaS product marketing',
+  ];
+
+  for (const query of queries) {
+    try {
+      const md = await duckDuckSearch(query);
+      const blocks = md.split(/\n## \[/g).slice(1);
+      for (const raw of blocks) {
+        const block = '## [' + raw;
+        const titleMatch = block.match(/## \[([^\]]+)\]\(([^)]+)\)/);
+        if (!titleMatch) continue;
+        const title = titleMatch[1].trim();
+        const ddgUrl = titleMatch[2];
+        const uddgMatch = ddgUrl.match(/uddg=([^&]+)/);
+        const realUrl = uddgMatch ? decodeURIComponent(uddgMatch[1]) : ddgUrl;
+        if (!/reddit\.com\/r\//i.test(realUrl)) continue;
+        if (title.length < 25) continue;
+        posts.push({
+          text: title.slice(0, 1200),
+          url: realUrl,
+          source: 'reddit',
+          likes: 0,
+          comments: 0,
+        });
+      }
+    } catch {
+      // continue to next query
+    }
+  }
+
+  const seen = new Set<string>();
+  return posts.filter((p) => (seen.has(p.url) ? false : (seen.add(p.url), true))).slice(0, 60);
+}
+
 export async function scrapeReddit(): Promise<RawPost[]> {
   const posts: RawPost[] = [];
   const errors: string[] = [];
+  const token = await getRedditAccessToken();
 
   for (const sub of SUBREDDITS) {
     try {
-      const res = await fetch(
-        `https://www.reddit.com/r/${sub}/top.json?t=month&limit=50`,
-        {
-          headers: { 'User-Agent': 'PixiiHookMiningEngine/1.0 (by /u/pixii-bot)' },
-          signal: AbortSignal.timeout(15000),
-        }
-      );
+      const res = await fetchRedditListing(sub, token);
       if (!res.ok) {
         errors.push(`r/${sub}: ${res.status}`);
         continue;
@@ -63,7 +141,13 @@ export async function scrapeReddit(): Promise<RawPost[]> {
   }
 
   if (posts.length === 0 && errors.length > 0) {
-    throw new Error(`Reddit scraping failed: ${errors.join(' | ')}`);
+    const fallbackPosts = await scrapeRedditViaSearch();
+    if (fallbackPosts.length > 0) return fallbackPosts;
+    throw new Error(
+      token
+        ? `Reddit OAuth scraping failed: ${errors.join(' | ')}`
+        : `Reddit public scraping failed: ${errors.join(' | ')}. Add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in Vercel for reliable Reddit mining.`
+    );
   }
 
   return posts
