@@ -388,7 +388,7 @@ export default function WriterClient({ patterns, initialPatternId }: Props) {
       <section className="rounded-[2rem] border hairline bg-card p-7 shadow-sm">
         <div className="mb-6">
           <p className="mono mb-2 text-xs font-black uppercase tracking-[0.24em] text-accent">The Writer</p>
-          <h1 className="display text-5xl font-black leading-none">Five drafts before Monday coffee.</h1>
+          <h1 className="display text-5xl font-black leading-none">Three drafts before Monday coffee.</h1>
           <p className="mt-4 text-sm leading-6 text-muted">
             Type a Pixii topic, select a mined hook pattern, and generate three ready-to-post drafts in Monte's voice.
           </p>

@@ -363,6 +363,7 @@ function HookGrid({ hooks, compact }: { hooks: any[]; compact?: boolean }) {
 function MessageBubble({ message, isLatestAssistant }: { message: Message; isLatestAssistant: boolean }) {
   if (message.role === 'user') {
     const text = message.blocks.filter((b) => b.kind === 'text').map((b) => (b as any).text).join('');
+    if (!text.trim()) return null;
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-2xl bg-ink px-4 py-2.5 text-sm leading-6 text-white shadow-sm">
@@ -477,8 +478,17 @@ export default function PixiiChatPanel() {
     if (!thread || thread.loaded) return;
     (async () => {
       const msgs = await dbLoadMessages(activeId);
+      // Filter out empty assistant placeholders left over from interrupted sessions
+      const cleaned = msgs.filter((m) => {
+        if (m.role === 'assistant' && m.blocks.length === 0) return false;
+        if (m.role === 'user') {
+          const txt = m.blocks.filter((b) => b.kind === 'text').map((b) => (b as any).text).join('');
+          if (!txt.trim()) return false;
+        }
+        return true;
+      });
       setThreads((prev) =>
-        prev.map((t) => t.id === activeId ? { ...t, messages: msgs, loaded: true } : t)
+        prev.map((t) => t.id === activeId ? { ...t, messages: cleaned, loaded: true } : t)
       );
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -537,12 +547,10 @@ export default function PixiiChatPanel() {
     const userMsg: Message  = { role: 'user',      blocks: [{ kind: 'text', text }] };
     const asstMsg: Message  = { role: 'assistant', blocks: [] };
 
-    /* Persist user message + create placeholder assistant row */
-    const [userDbId, asstDbId] = await Promise.all([
-      dbInsertMessage(threadId, 'user', userMsg.blocks),
-      dbInsertMessage(threadId, 'assistant', []),
-    ]);
+    /* Persist user message FIRST, then assistant — sequential to guarantee order */
+    const userDbId = await dbInsertMessage(threadId, 'user', userMsg.blocks);
     userMsg.dbId = userDbId;
+    const asstDbId = await dbInsertMessage(threadId, 'assistant', []);
     asstMsg.dbId = asstDbId;
 
     updateThread(threadId, (t) => ({
